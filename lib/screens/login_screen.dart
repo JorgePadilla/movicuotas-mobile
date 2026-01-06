@@ -118,18 +118,10 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const SizedBox(height: 60),
                 // Logo/Title
-                Container(
+                Image.asset(
+                  'assets/icon/app_icon.png',
                   width: 100,
                   height: 100,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(
-                    Icons.phone_android,
-                    size: 60,
-                    color: Colors.white,
-                  ),
                 ),
                 const SizedBox(height: 24),
                 const Text(
