@@ -76,4 +76,15 @@ class Loan {
   bool get isActive => status == 'active';
   bool get isCompleted => status == 'completed';
   bool get isDefaulted => status == 'defaulted';
+
+  /// Calculated monthly payment amount
+  double get monthlyPayment =>
+      numberOfInstallments > 0 ? financedAmount / numberOfInstallments : 0.0;
+
+  /// Device name for display
+  String get deviceName => device?.fullName ?? 'Dispositivo';
+
+  /// Next payment date (estimated based on start date and installment count)
+  /// This is a fallback - actual next payment should come from installments
+  DateTime? get nextPaymentDate => null;
 }

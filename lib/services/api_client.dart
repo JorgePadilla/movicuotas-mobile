@@ -63,6 +63,48 @@ class ApiClient {
     return 'Error de conexión';
   }
 
+  // ==================== DEVICE ACTIVATION ====================
+
+  /// Activate device with activation code (NO authentication required)
+  /// This is called before login to register the device with the backend
+  Future<Map<String, dynamic>> activateDevice({
+    required String activationCode,
+    required String fcmToken,
+    required String platform,
+    required String deviceName,
+  }) async {
+    try {
+      debugPrint('ApiClient: Sending device activation request...');
+      // Use a separate Dio instance without auth interceptor
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        connectTimeout: ApiConfig.connectTimeout,
+        receiveTimeout: ApiConfig.receiveTimeout,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ));
+
+      final response = await dio.post('/devices/activate', data: {
+        'activation_code': activationCode,
+        'fcm_token': fcmToken,
+        'platform': platform,
+        'device_name': deviceName,
+      });
+
+      debugPrint('ApiClient: Activation response status: ${response.statusCode}');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('ApiClient: Activation DioException: ${e.message}');
+      debugPrint('ApiClient: Activation Response: ${e.response?.data}');
+      throw ApiException(
+        _extractErrorMessage(e),
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   // ==================== AUTH ====================
 
   /// Login with identification number and contract number
@@ -221,6 +263,55 @@ class ApiClient {
       return (notifications: notifications, pagination: pagination);
     } on DioException catch (e) {
       throw ApiException(_extractErrorMessage(e), statusCode: e.response?.statusCode);
+    }
+  }
+
+  // ==================== DEVICE TOKENS (FCM) ====================
+
+  /// Register FCM device token with backend
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+    required String deviceName,
+    required String osVersion,
+    required String appVersion,
+  }) async {
+    try {
+      await _dio.post('/device_tokens', data: {
+        'device_token': {
+          'token': token,
+          'platform': platform,
+          'device_name': deviceName,
+          'os_version': osVersion,
+          'app_version': appVersion,
+        },
+      });
+      debugPrint('ApiClient: Device token registered successfully');
+    } on DioException catch (e) {
+      debugPrint('ApiClient: Failed to register device token: ${e.message}');
+      // Don't throw - token registration failure shouldn't block the user
+    }
+  }
+
+  /// Unregister FCM device token (on logout)
+  Future<void> unregisterDeviceToken(String token) async {
+    try {
+      await _dio.delete('/device_tokens', queryParameters: {'token': token});
+      debugPrint('ApiClient: Device token unregistered successfully');
+    } on DioException catch (e) {
+      debugPrint('ApiClient: Failed to unregister device token: ${e.message}');
+      // Don't throw - unregister failure shouldn't block logout
+    }
+  }
+
+  /// Refresh device token (call on app open to update last_used_at)
+  Future<void> refreshDeviceToken(String token) async {
+    try {
+      await _dio.put('/device_tokens/refresh', queryParameters: {'token': token});
+      debugPrint('ApiClient: Device token refreshed successfully');
+    } on DioException catch (e) {
+      debugPrint('ApiClient: Failed to refresh device token: ${e.message}');
+      // Don't throw - refresh failure shouldn't affect the app
     }
   }
 }
