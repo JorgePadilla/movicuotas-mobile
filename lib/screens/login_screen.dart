@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/constants.dart';
+import 'activation_success_screen.dart';
 import 'dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Whether this login is part of the activation flow (after device activation)
+  final bool isActivationFlow;
+
+  const LoginScreen({super.key, this.isActivationFlow = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -17,6 +23,23 @@ class _LoginScreenState extends State<LoginScreen> {
   final _contractController = TextEditingController();
   bool _obscureContract = true;
 
+  // Mask for identity: 0000-0000-00000 (13 digits)
+  final _identityMask = MaskTextInputFormatter(
+    mask: '####-####-#####',
+    filter: {'#': RegExp(r'[0-9]')},
+    type: MaskAutoCompletionType.lazy,
+  );
+
+  // Mask for contract: S01-2026-01-11-000001
+  final _contractMask = MaskTextInputFormatter(
+    mask: '@##-####-##-##-######',
+    filter: {
+      '@': RegExp(r'[A-Za-z]'),
+      '#': RegExp(r'[0-9]'),
+    },
+    type: MaskAutoCompletionType.lazy,
+  );
+
   @override
   void dispose() {
     _identityController.dispose();
@@ -27,17 +50,30 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Remove dashes from identity and convert contract to uppercase
+    final identity = _identityController.text.replaceAll('-', '').trim();
+    final contract = _contractController.text.toUpperCase().trim();
+
     final authProvider = context.read<AuthProvider>();
     final success = await authProvider.login(
-      identificationNumber: _identityController.text.trim(),
-      contractNumber: _contractController.text.trim(),
+      identificationNumber: identity,
+      contractNumber: contract,
     );
 
     if (success && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
-      );
+      if (widget.isActivationFlow) {
+        // Activation flow: show success screen
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ActivationSuccessScreen()),
+        );
+      } else {
+        // Normal login (JWT expired): go directly to dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        );
+      }
     } else if (mounted && authProvider.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -143,30 +179,36 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // Identity Field
+                // Identity Field with mask
                 TextFormField(
                   controller: _identityController,
                   decoration: const InputDecoration(
                     labelText: 'Número de Identidad',
-                    hintText: 'Ej: 0801199012345',
+                    hintText: '0000-0000-00000',
                     prefixIcon: Icon(Icons.badge_outlined),
                   ),
                   keyboardType: TextInputType.number,
+                  inputFormatters: [_identityMask],
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Ingresa tu número de identidad';
+                    }
+                    // Check if all 13 digits are entered
+                    final digits = value.replaceAll('-', '');
+                    if (digits.length < 13) {
+                      return 'Ingresa los 13 dígitos de tu identidad';
                     }
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
 
-                // Contract Field
+                // Contract Field with mask
                 TextFormField(
                   controller: _contractController,
                   decoration: InputDecoration(
                     labelText: 'Número de Contrato',
-                    hintText: 'Ej: MC-2026-0001',
+                    hintText: 'S01-2026-01-11-000001',
                     prefixIcon: const Icon(Icons.description_outlined),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -178,9 +220,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   obscureText: _obscureContract,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [
+                    _contractMask,
+                    UpperCaseTextFormatter(),
+                  ],
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Ingresa tu número de contrato';
+                    }
+                    // Check format: S01-2026-01-11-000001 (21 chars with dashes, 17 without)
+                    final clean = value.replaceAll('-', '');
+                    if (clean.length < 17) {
+                      return 'Completa el número de contrato';
                     }
                     return null;
                   },
@@ -237,6 +289,20 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// Custom formatter to convert text to uppercase
+class UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
     );
   }
 }

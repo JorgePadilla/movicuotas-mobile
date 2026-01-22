@@ -51,11 +51,17 @@ class NotificationPagination {
 
   factory NotificationPagination.fromJson(Map<String, dynamic> json) {
     return NotificationPagination(
-      currentPage: json['current_page'] as int,
-      totalPages: json['total_pages'] as int,
-      totalCount: json['total_count'] as int,
-      perPage: json['per_page'] as int,
+      currentPage: _parseInt(json['current_page']),
+      totalPages: _parseInt(json['total_pages']),
+      totalCount: _parseInt(json['total_count']),
+      perPage: _parseInt(json['per_page']),
     );
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is String) return int.parse(value);
+    return 0;
   }
 
   bool get hasNextPage => currentPage < totalPages;
