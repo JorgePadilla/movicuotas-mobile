@@ -48,6 +48,7 @@ class DashboardData {
   final int overdueCount;
   final double totalOverdueAmount;
   final DeviceStatus? deviceStatus;
+  final int unreadNotificationsCount;
 
   DashboardData({
     required this.customer,
@@ -56,6 +57,7 @@ class DashboardData {
     required this.overdueCount,
     required this.totalOverdueAmount,
     this.deviceStatus,
+    this.unreadNotificationsCount = 0,
   });
 
   factory DashboardData.fromJson(Map<String, dynamic> json) {
@@ -70,8 +72,10 @@ class DashboardData {
       deviceStatus: json['device_status'] != null
           ? DeviceStatus.fromJson(json['device_status'] as Map<String, dynamic>)
           : null,
+      unreadNotificationsCount: _parseInt(json['unread_notifications_count']),
     );
   }
 
   bool get hasOverduePayments => overdueCount > 0;
+  bool get hasUnreadNotifications => unreadNotificationsCount > 0;
 }

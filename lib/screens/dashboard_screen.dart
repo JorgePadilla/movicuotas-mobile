@@ -15,12 +15,34 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _bellAnimationController;
+  late Animation<double> _bellAnimation;
+
   @override
   void initState() {
     super.initState();
+    _bellAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    _bellAnimation = Tween<double>(begin: 0, end: 0.1).animate(
+      CurvedAnimation(parent: _bellAnimationController, curve: Curves.elasticIn),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<DashboardProvider>().loadDashboard();
+    });
+  }
+
+  @override
+  void dispose() {
+    _bellAnimationController.dispose();
+    super.dispose();
+  }
+
+  void _animateBell() {
+    _bellAnimationController.forward().then((_) {
+      _bellAnimationController.reverse();
     });
   }
 
@@ -61,12 +83,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: const Text('Mi Crédito'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+          Consumer<DashboardProvider>(
+            builder: (context, provider, child) {
+              final unreadCount = provider.dashboardData?.unreadNotificationsCount ?? 0;
+
+              // Trigger animation when there are unread notifications
+              if (unreadCount > 0 && !_bellAnimationController.isAnimating) {
+                WidgetsBinding.instance.addPostFrameCallback((_) => _animateBell());
+              }
+
+              return AnimatedBuilder(
+                animation: _bellAnimation,
+                builder: (context, child) {
+                  return Transform.rotate(
+                    angle: _bellAnimation.value,
+                    child: Stack(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            unreadCount > 0
+                                ? Icons.notifications_active
+                                : Icons.notifications_outlined,
+                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                            ).then((_) {
+                              // Refresh dashboard when returning from notifications
+                              provider.refresh();
+                            });
+                          },
+                        ),
+                        if (unreadCount > 0)
+                          Positioned(
+                            right: 6,
+                            top: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: AppColors.error,
+                                shape: BoxShape.circle,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              child: Text(
+                                unreadCount > 9 ? '9+' : unreadCount.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -107,37 +184,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onRefresh: provider.refresh,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _CustomerCard(customer: data.customer, loan: data.loan),
-                  const SizedBox(height: 16),
-                  if (data.nextPayment != null) ...[
-                    _NextPaymentCard(
-                      installment: data.nextPayment!,
-                      hasOverdue: data.hasOverduePayments,
+                  // Overdue Warning Banner
+                  if (data.hasOverduePayments)
+                    _OverdueWarningBanner(
                       overdueCount: data.overdueCount,
                       totalOverdue: data.totalOverdueAmount,
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  _LoanSummaryCard(loan: data.loan),
-                  const SizedBox(height: 16),
-                  if (data.deviceStatus != null)
-                    _DeviceCard(deviceStatus: data.deviceStatus!),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.list_alt),
-                      label: const Text('Ver Todas las Cuotas'),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const InstallmentsScreen()),
-                        );
-                      },
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _CustomerCard(customer: data.customer, loan: data.loan),
+                        const SizedBox(height: 16),
+                        if (data.nextPayment != null) ...[
+                          _NextPaymentCard(
+                            installment: data.nextPayment!,
+                            hasOverdue: data.hasOverduePayments,
+                            overdueCount: data.overdueCount,
+                            totalOverdue: data.totalOverdueAmount,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        _LoanSummaryCard(loan: data.loan),
+                        const SizedBox(height: 16),
+                        if (data.deviceStatus != null)
+                          _DeviceCard(deviceStatus: data.deviceStatus!),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.list_alt),
+                            label: const Text('Ver Todas las Cuotas'),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const InstallmentsScreen()),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -197,6 +287,59 @@ class _CustomerCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OverdueWarningBanner extends StatelessWidget {
+  final int overdueCount;
+  final double totalOverdue;
+
+  const _OverdueWarningBanner({
+    required this.overdueCount,
+    required this.totalOverdue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: AppColors.error,
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_rounded,
+            color: Colors.white,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  overdueCount == 1
+                      ? 'Tienes 1 cuota vencida'
+                      : 'Tienes $overdueCount cuotas vencidas',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  'Total: ${Formatters.currency(totalOverdue)}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -34,6 +34,26 @@ class AppNotification {
   bool get isPaymentOverdue => notificationType == 'payment_overdue';
   bool get isDeviceBlocked => notificationType == 'device_blocked';
   bool get isDeviceUnblocked => notificationType == 'device_unblocked';
+
+  AppNotification copyWith({
+    int? id,
+    String? title,
+    String? message,
+    String? notificationType,
+    bool? isRead,
+    DateTime? createdAt,
+    Map<String, dynamic>? data,
+  }) {
+    return AppNotification(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      message: message ?? this.message,
+      notificationType: notificationType ?? this.notificationType,
+      isRead: isRead ?? this.isRead,
+      createdAt: createdAt ?? this.createdAt,
+      data: data ?? this.data,
+    );
+  }
 }
 
 class NotificationPagination {

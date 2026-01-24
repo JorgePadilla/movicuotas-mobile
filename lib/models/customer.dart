@@ -25,19 +25,27 @@ class Customer {
 
   factory Customer.fromJson(Map<String, dynamic> json) {
     return Customer(
-      id: json['id'] as int,
-      identificationNumber: json['identification_number'] as String,
-      fullName: json['full_name'] as String,
+      id: _parseInt(json['id']),
+      identificationNumber: json['identification_number'] as String? ?? '',
+      fullName: json['full_name'] as String? ?? '',
       email: json['email'] as String?,
-      phone: json['phone'] as String,
+      phone: json['phone'] as String? ?? '',
       dateOfBirth: json['date_of_birth'] != null
-          ? DateTime.parse(json['date_of_birth'] as String)
+          ? DateTime.tryParse(json['date_of_birth'] as String)
           : null,
       gender: json['gender'] as String?,
       address: json['address'] as String?,
       city: json['city'] as String?,
-      status: json['status'] as String,
+      status: json['status'] as String? ?? 'active',
     );
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   bool get isActive => status == 'active';

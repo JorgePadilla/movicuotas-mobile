@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/constants.dart';
+import '../utils/formatters.dart';
 import 'dashboard_screen.dart';
 
 class ActivationSuccessScreen extends StatelessWidget {
   const ActivationSuccessScreen({super.key});
-
-  String _formatCurrency(double amount) {
-    final formatter = NumberFormat('#,##0.00', 'es_HN');
-    return 'L ${formatter.format(amount)}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +95,7 @@ class ActivationSuccessScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          _formatCurrency(loan.monthlyPayment),
+                          Formatters.currency(loan.monthlyPayment),
                           style: const TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.bold,

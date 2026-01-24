@@ -28,6 +28,7 @@ class Loan {
   final double financedAmount;
   final double interestRate;
   final int numberOfInstallments;
+  final double installmentAmount;
   final DateTime startDate;
   final DateTime endDate;
   final String branchNumber;
@@ -45,6 +46,7 @@ class Loan {
     required this.financedAmount,
     required this.interestRate,
     required this.numberOfInstallments,
+    required this.installmentAmount,
     required this.startDate,
     required this.endDate,
     required this.branchNumber,
@@ -64,8 +66,13 @@ class Loan {
       financedAmount: _parseDouble(json['financed_amount']),
       interestRate: _parseDouble(json['interest_rate']),
       numberOfInstallments: _parseInt(json['number_of_installments']),
-      startDate: DateTime.parse(json['start_date'] as String),
-      endDate: DateTime.parse(json['end_date'] as String),
+      installmentAmount: _parseDouble(json['installment_amount']),
+      startDate: json['start_date'] != null
+          ? DateTime.parse(json['start_date'] as String)
+          : DateTime.now(),
+      endDate: json['end_date'] != null
+          ? DateTime.parse(json['end_date'] as String)
+          : DateTime.now(),
       branchNumber: json['branch_number'] as String? ?? '',
       device: json['device'] != null
           ? Device.fromJson(json['device'] as Map<String, dynamic>)
@@ -77,9 +84,10 @@ class Loan {
   bool get isCompleted => status == 'completed';
   bool get isDefaulted => status == 'defaulted';
 
-  /// Calculated monthly payment amount
+  /// Monthly payment amount (from backend calculation with interest)
+  /// Falls back to simple division only if installmentAmount is not available
   double get monthlyPayment =>
-      numberOfInstallments > 0 ? financedAmount / numberOfInstallments : 0.0;
+      installmentAmount > 0 ? installmentAmount : (numberOfInstallments > 0 ? financedAmount / numberOfInstallments : 0.0);
 
   /// Device name for display
   String get deviceName => device?.fullName ?? 'Dispositivo';

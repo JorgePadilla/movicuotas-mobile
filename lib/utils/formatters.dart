@@ -1,19 +1,16 @@
 import 'package:intl/intl.dart';
 
 class Formatters {
-  static final _currencyFormat = NumberFormat.currency(
-    locale: 'es_HN',
-    symbol: 'L ',
-    decimalDigits: 2,
-  );
+  static final _numberFormat = NumberFormat('#,##0', 'es');
 
   static final _dateFormat = DateFormat('dd/MM/yyyy');
   static final _dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
   static final _monthYearFormat = DateFormat('MMMM yyyy', 'es');
 
-  /// Format amount as Honduran Lempiras
+  /// Format amount as Honduran Lempiras (e.g., "L. 1,500")
+  /// Always puts "L." on the left side
   static String currency(double amount) {
-    return _currencyFormat.format(amount);
+    return 'L. ${_numberFormat.format(amount.ceil())}';
   }
 
   /// Format date as dd/MM/yyyy

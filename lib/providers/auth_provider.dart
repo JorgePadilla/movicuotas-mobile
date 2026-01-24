@@ -48,6 +48,9 @@ class AuthProvider extends ChangeNotifier {
 
   /// Check if user is already logged in (has valid token)
   Future<void> checkAuthStatus() async {
+    // Check if device was previously activated
+    _isDeviceActivated = await _storageService.isDeviceActivated();
+
     final hasToken = await _storageService.hasToken();
     if (hasToken) {
       // Try to fetch dashboard to validate token
@@ -91,7 +94,7 @@ class AuthProvider extends ChangeNotifier {
       final deviceInfo = await _notificationService.getDeviceInfo();
 
       // Call API to activate device
-      await _apiClient.activateDevice(
+      final data = await _apiClient.activateDevice(
         activationCode: activationCode,
         fcmToken: fcmToken,
         platform: deviceInfo['platform']!,
@@ -100,6 +103,24 @@ class AuthProvider extends ChangeNotifier {
 
       debugPrint('AuthProvider: Device activation successful');
       _isDeviceActivated = true;
+      await _storageService.saveDeviceActivated(true);
+
+      // Parse customer and loan if present (skip login flow)
+      if (data['customer'] != null) {
+        debugPrint('AuthProvider: Parsing customer from activation...');
+        _customer = Customer.fromJson(data['customer'] as Map<String, dynamic>);
+      }
+      if (data['loan'] != null) {
+        debugPrint('AuthProvider: Parsing loan from activation...');
+        _loan = Loan.fromJson(data['loan'] as Map<String, dynamic>);
+      }
+
+      // If token was saved, set authenticated status
+      if (data['token'] != null) {
+        debugPrint('AuthProvider: Token received, setting authenticated status');
+        _status = AuthStatus.authenticated;
+      }
+
       notifyListeners();
 
       return ActivationResult(success: true);
@@ -231,14 +252,21 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Refresh FCM device token (call on app open)
+  /// If token doesn't exist in backend, register it
   Future<void> _refreshDeviceToken() async {
-    try {
-      final token = await _notificationService.refreshToken();
-      if (token == null) return;
+    final token = await _notificationService.refreshToken();
+    if (token == null) {
+      debugPrint('AuthProvider: No FCM token available for refresh');
+      return;
+    }
 
-      await _apiClient.refreshDeviceToken(token);
-    } catch (e) {
-      debugPrint('AuthProvider: Failed to refresh device token: $e');
+    // Try to refresh, if it fails (token not found), register it
+    final success = await _apiClient.refreshDeviceToken(token);
+    if (success) {
+      debugPrint('AuthProvider: Device token refreshed');
+    } else {
+      debugPrint('AuthProvider: Token not found, registering...');
+      await _registerDeviceToken();
     }
   }
 

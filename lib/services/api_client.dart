@@ -94,7 +94,23 @@ class ApiClient {
       });
 
       debugPrint('ApiClient: Activation response status: ${response.statusCode}');
-      return response.data as Map<String, dynamic>;
+      final data = response.data as Map<String, dynamic>;
+
+      // Save token if present (skip login flow)
+      if (data['token'] != null) {
+        debugPrint('ApiClient: Saving token from activation...');
+        await _storageService.saveToken(data['token'] as String);
+      }
+
+      // Save customer ID if present
+      if (data['customer'] != null) {
+        final customerData = data['customer'] as Map<String, dynamic>;
+        if (customerData['id'] != null) {
+          await _storageService.saveCustomerId(customerData['id'] as int);
+        }
+      }
+
+      return data;
     } on DioException catch (e) {
       debugPrint('ApiClient: Activation DioException: ${e.message}');
       debugPrint('ApiClient: Activation Response: ${e.response?.data}');
@@ -266,6 +282,16 @@ class ApiClient {
     }
   }
 
+  /// Mark all notifications as read
+  Future<void> markAllNotificationsRead() async {
+    try {
+      await _dio.post('/notifications/mark_all_read');
+    } on DioException catch (e) {
+      debugPrint('ApiClient: Failed to mark notifications as read: ${e.message}');
+      // Don't throw - this shouldn't block the user
+    }
+  }
+
   // ==================== DEVICE TOKENS (FCM) ====================
 
   /// Register FCM device token with backend
@@ -305,13 +331,16 @@ class ApiClient {
   }
 
   /// Refresh device token (call on app open to update last_used_at)
-  Future<void> refreshDeviceToken(String token) async {
+  /// Returns true if refreshed successfully, false if token not found
+  Future<bool> refreshDeviceToken(String token) async {
     try {
       await _dio.put('/device_tokens/refresh', queryParameters: {'token': token});
       debugPrint('ApiClient: Device token refreshed successfully');
+      return true;
     } on DioException catch (e) {
       debugPrint('ApiClient: Failed to refresh device token: ${e.message}');
-      // Don't throw - refresh failure shouldn't affect the app
+      // Return false so caller can register token if needed
+      return false;
     }
   }
 }

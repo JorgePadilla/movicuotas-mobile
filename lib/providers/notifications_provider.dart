@@ -31,6 +31,13 @@ class NotificationsProvider extends ChangeNotifier {
       final result = await _apiClient.getNotifications(page: 1);
       _notifications = result.notifications;
       _pagination = result.pagination;
+
+      // Mark all notifications as read after loading
+      if (_notifications.isNotEmpty) {
+        _apiClient.markAllNotificationsRead();
+        // Update local state to show as read
+        _notifications = _notifications.map((n) => n.copyWith(isRead: true)).toList();
+      }
     } on ApiException catch (e) {
       _error = e.message;
     } finally {

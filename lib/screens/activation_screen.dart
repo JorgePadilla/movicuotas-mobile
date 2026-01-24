@@ -3,6 +3,7 @@ import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/constants.dart';
+import 'dashboard_screen.dart';
 import 'login_screen.dart';
 
 class ActivationScreen extends StatefulWidget {
@@ -59,12 +60,21 @@ class _ActivationScreenState extends State<ActivationScreen> {
     setState(() => _isLoading = false);
 
     if (result.success) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const LoginScreen(isActivationFlow: true),
-        ),
-      );
+      if (authProvider.isAuthenticated) {
+        // Skip login - go directly to dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        );
+      } else {
+        // Fallback to login (backward compatibility)
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(isActivationFlow: true),
+          ),
+        );
+      }
     } else {
       // Clear the code and focus on first character
       _codeController.clear();
@@ -235,6 +245,35 @@ class _ActivationScreenState extends State<ActivationScreen> {
               ),
 
               const SizedBox(height: 48),
+
+              // Already activated? Login link
+              const Divider(height: 32),
+              const Text(
+                '¿Ya activaste tu dispositivo?',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LoginScreen(),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Inicia sesión aquí',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
 
               // Help Footer
               Container(

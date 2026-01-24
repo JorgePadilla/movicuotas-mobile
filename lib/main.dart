@@ -118,8 +118,14 @@ class _SplashScreenState extends State<SplashScreen> {
         context,
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
       );
+    } else if (authProvider.isDeviceActivated) {
+      // Device activated but no JWT (expired) → Login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
     } else {
-      // No JWT → Activation flow
+      // Device not activated → Activation flow
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const ActivationScreen()),

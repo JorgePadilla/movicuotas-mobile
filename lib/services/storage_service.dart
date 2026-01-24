@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class StorageService {
   static const _tokenKey = 'jwt_token';
   static const _customerIdKey = 'customer_id';
+  static const _deviceActivatedKey = 'device_activated';
 
   final FlutterSecureStorage _storage;
 
@@ -37,5 +38,16 @@ class StorageService {
   Future<bool> hasToken() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;
+  }
+
+  /// Save device activation status
+  Future<void> saveDeviceActivated(bool activated) async {
+    await _storage.write(key: _deviceActivatedKey, value: activated.toString());
+  }
+
+  /// Check if device has been activated
+  Future<bool> isDeviceActivated() async {
+    final value = await _storage.read(key: _deviceActivatedKey);
+    return value == 'true';
   }
 }
