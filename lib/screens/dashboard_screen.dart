@@ -6,6 +6,7 @@ import '../utils/constants.dart';
 import '../utils/formatters.dart';
 import 'installments_screen.dart';
 import 'notifications_screen.dart';
+import 'support_screen.dart';
 import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -223,6 +224,20 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(builder: (_) => const InstallmentsScreen()),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.support_agent),
+                            label: const Text('Soporte / Ayuda'),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const SupportScreen()),
                               );
                             },
                           ),

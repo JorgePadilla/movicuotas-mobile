@@ -63,6 +63,31 @@ class ApiClient {
     return 'Error de conexión';
   }
 
+  // ==================== SETTINGS ====================
+
+  /// Get public system settings (no auth required)
+  /// Returns settings like support phone number
+  Future<Map<String, dynamic>> getSettings() async {
+    try {
+      // Use a separate Dio instance without auth interceptor
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        connectTimeout: ApiConfig.connectTimeout,
+        receiveTimeout: ApiConfig.receiveTimeout,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ));
+
+      final response = await dio.get('/settings');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('ApiClient: Failed to fetch settings: ${e.message}');
+      return {};
+    }
+  }
+
   // ==================== DEVICE ACTIVATION ====================
 
   /// Activate device with activation code (NO authentication required)
