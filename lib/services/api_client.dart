@@ -123,18 +123,16 @@ class ApiClient {
 
   // ==================== AUTH ====================
 
-  /// Login with identification number and contract number
+  /// Login with identification number
   /// Returns customer and loan data along with JWT token
   Future<Map<String, dynamic>> login({
     required String identificationNumber,
-    required String contractNumber,
   }) async {
     try {
       debugPrint('ApiClient: Sending login request...');
       final response = await _dio.post('/auth/login', data: {
         'auth': {
           'identification_number': identificationNumber,
-          'contract_number': contractNumber,
         },
       });
 

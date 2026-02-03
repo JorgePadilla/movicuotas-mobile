@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -20,8 +19,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _identityController = TextEditingController();
-  final _contractController = TextEditingController();
-  bool _obscureContract = true;
+  bool _rememberSession = true;
 
   // Mask for identity: 0000-0000-00000 (13 digits)
   final _identityMask = MaskTextInputFormatter(
@@ -30,34 +28,22 @@ class _LoginScreenState extends State<LoginScreen> {
     type: MaskAutoCompletionType.lazy,
   );
 
-  // Mask for contract: S01-2026-01-11-000001
-  final _contractMask = MaskTextInputFormatter(
-    mask: '@##-####-##-##-######',
-    filter: {
-      '@': RegExp(r'[A-Za-z]'),
-      '#': RegExp(r'[0-9]'),
-    },
-    type: MaskAutoCompletionType.lazy,
-  );
-
   @override
   void dispose() {
     _identityController.dispose();
-    _contractController.dispose();
     super.dispose();
   }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Remove dashes from identity and convert contract to uppercase
+    // Remove dashes from identity
     final identity = _identityController.text.replaceAll('-', '').trim();
-    final contract = _contractController.text.toUpperCase().trim();
 
     final authProvider = context.read<AuthProvider>();
     final success = await authProvider.login(
       identificationNumber: identity,
-      contractNumber: contract,
+      rememberSession: _rememberSession,
     );
 
     if (success && mounted) {
@@ -82,63 +68,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     }
-  }
-
-  void _showForgotContractDialog() {
-    final phoneController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Recuperar Contrato'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Ingresa tu número de teléfono registrado y te enviaremos tu número de contrato por SMS.',
-              style: TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: phoneController,
-              decoration: const InputDecoration(
-                labelText: 'Número de Teléfono',
-                hintText: '+504XXXXXXXX',
-                prefixIcon: Icon(Icons.phone),
-              ),
-              keyboardType: TextInputType.phone,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (phoneController.text.isEmpty) return;
-
-              final authProvider = context.read<AuthProvider>();
-              final message = await authProvider.forgotContract(
-                phone: phoneController.text.trim(),
-              );
-
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(message ?? authProvider.error ?? 'Error'),
-                    backgroundColor: message != null ? AppColors.success : AppColors.error,
-                  ),
-                );
-              }
-            },
-            child: const Text('Enviar'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -201,53 +130,33 @@ class _LoginScreenState extends State<LoginScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
 
-                // Contract Field with mask
-                TextFormField(
-                  controller: _contractController,
-                  decoration: InputDecoration(
-                    labelText: 'Número de Contrato',
-                    hintText: 'S01-2026-01-11-000001',
-                    prefixIcon: const Icon(Icons.description_outlined),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureContract ? Icons.visibility_off : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(() => _obscureContract = !_obscureContract);
-                      },
+                // Remember session checkbox
+                CheckboxListTile(
+                  value: _rememberSession,
+                  onChanged: (value) => setState(() => _rememberSession = value ?? true),
+                  title: const Text(
+                    'Mantener sesión iniciada',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                  obscureText: _obscureContract,
-                  textCapitalization: TextCapitalization.characters,
-                  inputFormatters: [
-                    _contractMask,
-                    UpperCaseTextFormatter(),
-                  ],
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Ingresa tu número de contrato';
-                    }
-                    // Check format: S01-2026-01-11-000001 (21 chars with dashes, 17 without)
-                    final clean = value.replaceAll('-', '');
-                    if (clean.length < 17) {
-                      return 'Completa el número de contrato';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 8),
-
-                // Forgot Contract Link
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _showForgotContractDialog,
-                    child: const Text('¿Olvidaste tu contrato?'),
+                  subtitle: const Text(
+                    'No tendrás que ingresar tus datos la próxima vez',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: AppColors.primary,
                 ),
-                const SizedBox(height: 24),
+
+                const SizedBox(height: 16),
 
                 // Login Button
                 Consumer<AuthProvider>(
@@ -277,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // Help Text
                 const Text(
-                  'Si no tienes tu número de contrato,\ncontacta a tu tienda.',
+                  'Ingresa tu número de identidad\npara consultar tu crédito.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textSecondary,
@@ -289,20 +198,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// Custom formatter to convert text to uppercase
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return TextEditingValue(
-      text: newValue.text.toUpperCase(),
-      selection: newValue.selection,
     );
   }
 }

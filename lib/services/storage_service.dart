@@ -4,6 +4,7 @@ class StorageService {
   static const _tokenKey = 'jwt_token';
   static const _customerIdKey = 'customer_id';
   static const _deviceActivatedKey = 'device_activated';
+  static const _rememberSessionKey = 'remember_session';
 
   final FlutterSecureStorage _storage;
 
@@ -32,7 +33,10 @@ class StorageService {
   }
 
   Future<void> clearAll() async {
+    // Preserve remember session preference
+    final remember = await getRememberSession();
     await _storage.deleteAll();
+    await saveRememberSession(remember);
   }
 
   Future<bool> hasToken() async {
@@ -49,5 +53,21 @@ class StorageService {
   Future<bool> isDeviceActivated() async {
     final value = await _storage.read(key: _deviceActivatedKey);
     return value == 'true';
+  }
+
+  /// Save remember session preference
+  Future<void> saveRememberSession(bool remember) async {
+    await _storage.write(key: _rememberSessionKey, value: remember.toString());
+  }
+
+  /// Get remember session preference (default: true)
+  Future<bool> getRememberSession() async {
+    final value = await _storage.read(key: _rememberSessionKey);
+    return value != 'false'; // Default true if not set
+  }
+
+  /// Clear only the token (for "don't remember session" case)
+  Future<void> clearToken() async {
+    await _storage.delete(key: _tokenKey);
   }
 }

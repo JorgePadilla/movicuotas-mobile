@@ -75,7 +75,10 @@ class AuthProvider extends ChangeNotifier {
 
   /// Activate device with activation code
   /// Returns ActivationResult with success status and error info if failed
-  Future<ActivationResult> activateDevice({required String activationCode}) async {
+  Future<ActivationResult> activateDevice({
+    required String activationCode,
+    bool rememberSession = true,
+  }) async {
     try {
       debugPrint('AuthProvider: Starting device activation...');
 
@@ -119,6 +122,13 @@ class AuthProvider extends ChangeNotifier {
       if (data['token'] != null) {
         debugPrint('AuthProvider: Token received, setting authenticated status');
         _status = AuthStatus.authenticated;
+
+        // Handle remember session preference
+        await _storageService.saveRememberSession(rememberSession);
+        if (!rememberSession) {
+          debugPrint('AuthProvider: User chose not to remember session, clearing token');
+          await _storageService.clearToken();
+        }
       }
 
       notifyListeners();
@@ -140,10 +150,10 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Login with identification number and contract number
+  /// Login with identification number
   Future<bool> login({
     required String identificationNumber,
-    required String contractNumber,
+    bool rememberSession = true,
   }) async {
     _status = AuthStatus.loading;
     _error = null;
@@ -153,7 +163,6 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('AuthProvider: Starting login...');
       final data = await _apiClient.login(
         identificationNumber: identificationNumber,
-        contractNumber: contractNumber,
       );
       debugPrint('AuthProvider: Login response received');
       debugPrint('AuthProvider: Data keys: ${data.keys}');
@@ -171,6 +180,14 @@ class AuthProvider extends ChangeNotifier {
       _loan = Loan.fromJson(data['loan'] as Map<String, dynamic>);
       debugPrint('AuthProvider: Login successful!');
       _status = AuthStatus.authenticated;
+
+      // Handle remember session preference
+      await _storageService.saveRememberSession(rememberSession);
+      if (!rememberSession) {
+        debugPrint('AuthProvider: User chose not to remember session, clearing token');
+        await _storageService.clearToken();
+      }
+
       notifyListeners();
 
       // Register FCM device token after successful login

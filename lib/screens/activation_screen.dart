@@ -18,6 +18,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
   final _focusNode = FocusNode();
   bool _isLoading = false;
   String? _errorMessage;
+  bool _rememberSession = true;
 
   @override
   void dispose() {
@@ -53,7 +54,10 @@ class _ActivationScreenState extends State<ActivationScreen> {
     });
 
     final authProvider = context.read<AuthProvider>();
-    final result = await authProvider.activateDevice(activationCode: code);
+    final result = await authProvider.activateDevice(
+      activationCode: code,
+      rememberSession: _rememberSession,
+    );
 
     if (!mounted) return;
 
@@ -216,7 +220,33 @@ class _ActivationScreenState extends State<ActivationScreen> {
                 ),
               ],
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
+
+              // Remember session checkbox
+              CheckboxListTile(
+                value: _rememberSession,
+                onChanged: (value) => setState(() => _rememberSession = value ?? true),
+                title: const Text(
+                  'Mantener sesión iniciada',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                subtitle: const Text(
+                  'No tendrás que ingresar tus datos la próxima vez',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+                activeColor: AppColors.primary,
+              ),
+
+              const SizedBox(height: 16),
 
               // Activate Button
               SizedBox(
