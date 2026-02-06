@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_client.dart';
 import '../utils/constants.dart';
 
@@ -11,23 +13,30 @@ class SupportScreen extends StatefulWidget {
 
 class _SupportScreenState extends State<SupportScreen> {
   static const _fallbackPhone = '97902401';
+  static const _fallbackSchedule =
+      'Horario de atención:\nLunes a Viernes 8:00 AM - 5:00 PM\nSábado 8:00 AM - 12:00 PM';
 
   String _phoneNumber = _fallbackPhone;
+  String _schedule = _fallbackSchedule;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadSupportPhone();
+    _loadSettings();
   }
 
-  Future<void> _loadSupportPhone() async {
+  Future<void> _loadSettings() async {
     final settings = await ApiClient().getSettings();
     final phone = settings['support_phone_number'] as String?;
+    final schedule = settings['support_schedule'] as String?;
     if (mounted) {
       setState(() {
         if (phone != null && phone.isNotEmpty) {
           _phoneNumber = phone;
+        }
+        if (schedule != null && schedule.isNotEmpty) {
+          _schedule = schedule;
         }
         _isLoading = false;
       });
@@ -105,15 +114,57 @@ class _SupportScreenState extends State<SupportScreen> {
                               letterSpacing: 2,
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () async {
+                                    final uri = Uri.parse('tel:$_phoneNumber');
+                                    if (await canLaunchUrl(uri)) {
+                                      await launchUrl(uri);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.call, size: 18),
+                                  label: const Text('Llamar'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.success,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: _phoneNumber));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Número copiado'),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.copy, size: 18),
+                                  label: const Text('Copiar'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.primary,
+                                    side: const BorderSide(color: AppColors.primary),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 24),
                   // Schedule info
-                  const Text(
-                    'Horario de atención:\nLunes a Viernes 8:00 AM - 5:00 PM\nSábado 8:00 AM - 12:00 PM',
-                    style: TextStyle(
+                  Text(
+                    _schedule,
+                    style: const TextStyle(
                       fontSize: 13,
                       color: AppColors.textSecondary,
                       height: 1.6,
