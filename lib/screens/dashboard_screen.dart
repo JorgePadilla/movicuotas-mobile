@@ -211,9 +211,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                           const SizedBox(height: 16),
                         ],
                         _LoanSummaryCard(loan: data.loan),
-                        const SizedBox(height: 16),
-                        if (data.deviceStatus != null)
-                          _DeviceCard(deviceStatus: data.deviceStatus!),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
@@ -242,6 +239,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             },
                           ),
                         ),
+                        if (data.deviceStatus != null) ...[
+                          const SizedBox(height: 16),
+                          _DeviceCard(deviceStatus: data.deviceStatus!),
+                        ],
                       ],
                     ),
                   ),
@@ -381,7 +382,7 @@ class _NextPaymentCard extends StatelessWidget {
     return Card(
       color: cardColor.withOpacity(0.1),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Column(
           children: [
             Row(
@@ -390,13 +391,14 @@ class _NextPaymentCard extends StatelessWidget {
                 Text(
                   isOverdue ? 'PAGO VENCIDO' : 'PRÓXIMO PAGO',
                   style: TextStyle(
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: cardColor,
                     letterSpacing: 1,
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
                     color: cardColor.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
@@ -404,6 +406,7 @@ class _NextPaymentCard extends StatelessWidget {
                   child: Text(
                     'Cuota #${installment.installmentNumber}',
                     style: TextStyle(
+                      fontSize: 13,
                       color: cardColor,
                       fontWeight: FontWeight.w600,
                     ),
@@ -411,32 +414,32 @@ class _NextPaymentCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             Text(
               Formatters.currency(installment.amount),
               style: TextStyle(
-                fontSize: 36,
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
                 color: cardColor,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.calendar_today, size: 16, color: cardColor),
-                const SizedBox(width: 8),
+                Icon(Icons.calendar_today, size: 14, color: cardColor),
+                const SizedBox(width: 6),
                 Text(
                   'Vence: ${Formatters.date(installment.dueDate)}',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     color: cardColor,
                   ),
                 ),
               ],
             ),
             if (isOverdue) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 '${installment.daysOverdue} días de atraso',
                 style: const TextStyle(
@@ -446,7 +449,7 @@ class _NextPaymentCard extends StatelessWidget {
               ),
             ],
             if (hasOverdue && overdueCount > 1) ...[
-              const Divider(height: 24),
+              const Divider(height: 20),
               Text(
                 'Total vencido: ${Formatters.currency(totalOverdue)} ($overdueCount cuotas)',
                 style: const TextStyle(
