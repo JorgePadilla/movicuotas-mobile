@@ -33,10 +33,14 @@ class StorageService {
   }
 
   Future<void> clearAll() async {
-    // Preserve remember session preference
+    // Preserve remember-session preference and device activation: activation is a
+    // property of the phone, not of the session, so after logout the user should
+    // land on the identity login screen, not the activation-code screen.
     final remember = await getRememberSession();
+    final activated = await isDeviceActivated();
     await _storage.deleteAll();
     await saveRememberSession(remember);
+    if (activated) await saveDeviceActivated(true);
   }
 
   Future<bool> hasToken() async {

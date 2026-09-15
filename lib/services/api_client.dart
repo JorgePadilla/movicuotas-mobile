@@ -17,6 +17,15 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
+  /// JWT of the current session, kept in memory for the life of the process.
+  ///
+  /// Static on purpose: every provider builds its own ApiClient, and they all
+  /// must share the session. This is what makes "no recordar sesión" work: the
+  /// token is NOT persisted to secure storage, but every request in this run is
+  /// still authenticated. On a cold start there is no persisted token, so the
+  /// user lands on the login screen, which is the intended behaviour.
+  static String? _sessionToken;
+
   late final Dio _dio;
   final StorageService _storageService;
 
@@ -34,7 +43,7 @@ class ApiClient {
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await _storageService.getToken();
+        final token = _sessionToken ?? await _storageService.getToken();
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
@@ -42,6 +51,7 @@ class ApiClient {
       },
       onError: (error, handler) {
         if (error.response?.statusCode == 401) {
+          _sessionToken = null;
           _storageService.clearAll();
         }
         return handler.next(error);
@@ -124,6 +134,7 @@ class ApiClient {
       // Save token if present (skip login flow)
       if (data['token'] != null) {
         debugPrint('ApiClient: Saving token from activation...');
+        _sessionToken = data['token'] as String;
         await _storageService.saveToken(data['token'] as String);
       }
 
@@ -173,6 +184,7 @@ class ApiClient {
       }
       final token = data['token'] as String;
       debugPrint('ApiClient: Saving token...');
+      _sessionToken = token;
       await _storageService.saveToken(token);
 
       // Save customer ID if present
@@ -210,8 +222,9 @@ class ApiClient {
     }
   }
 
-  /// Logout - clear local storage
+  /// Logout - clear the in-memory session and local storage
   Future<void> logout() async {
+    _sessionToken = null;
     await _storageService.clearAll();
   }
 

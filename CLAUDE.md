@@ -1,743 +1,160 @@
 # CLAUDE.md - MOVICUOTAS Mobile
 
-## Contexto del Proyecto
+App Flutter para clientes de MOVICUOTAS (créditos de teléfonos). Consume la API
+móvil del repo hermano `movicuotas-backend` (Rails 8) en `https://movicuotas.com/api/v1`.
 
-**MOVICUOTAS Mobile** es una aplicación Flutter simple de **solo consulta** para clientes del sistema de créditos de dispositivos móviles. La app permite a los clientes ver información básica sobre su crédito actual.
+> Este archivo describe el código **tal como está**. Si cambias auth, tokens FCM o
+> endpoints, actualízalo. (La versión anterior describía un diseño con cookies y
+> login por contrato que nunca se implementó.)
 
-### Funcionalidad Core (Simple y Directa)
+## Qué hace la app
 
-Esta NO es una app compleja. Es básicamente:
+1. **Activación** del teléfono con el código de 6 caracteres del contrato
+   (`POST /devices/activate`). Vincula el token FCM al dispositivo y devuelve un JWT.
+2. **Login por identidad** (`POST /auth/login`, solo `identification_number`;
+   no hay contraseña ni número de contrato). Devuelve JWT de 30 días.
+3. **Dashboard**: cliente, préstamo, próxima cuota, estado del dispositivo.
+4. **Cuotas** e historial; **reporte de pago** con foto del recibo (`POST /payments`).
+5. **Notificaciones push (FCM)**: recordatorios de pago (3 días antes, 1 día
+   antes, el día) y avisos de mora, enviados por el backend a las 8am. Pantalla de
+   notificaciones (`GET /notifications`).
+6. Pantalla de soporte (teléfono / horario).
 
-1. **Login**: Identidad + Número de Contrato
-2. **Ver Info del Usuario**: Nombre, contrato, dispositivo
-3. **Ver Cuota Actual**: Próximo pago pendiente
-4. **Ver Historial de Pagos**: Lista de pagos realizados
+## Stack
 
-**No incluye**: Pagos en línea, notificaciones push complejas, MDM, funcionalidad offline avanzada, ni gestión de préstamos.
+- Flutter / Dart ^3.9, `provider` para estado, `dio` para HTTP.
+- `flutter_secure_storage`: JWT, `customer_id`, `device_activated`, `remember_session`.
+- `firebase_core` + `firebase_messaging` (push) + `flutter_local_notifications`
+  (solo para mostrar mensajes FCM en primer plano; **no** hay notificaciones locales
+  programadas).
+- `device_info_plus` / `package_info_plus`: metadatos que se mandan al registrar el token.
+- `google-services.json` **no** está en git; pedirlo antes de compilar.
 
-### Objetivo del Sistema
-
-Proporcionar a los clientes una forma simple y rápida de consultar el estado de su crédito sin necesidad de llamar a la tienda o visitar en persona.
-
-## Arquitectura del Sistema
-
-### Arquitectura General
-
-```
-┌─────────────────────────────────────────┐
-│     MOVICUOTAS Mobile (Flutter)         │
-│  ┌───────────────────────────────────┐  │
-│  │   Presentation Layer              │  │
-│  │   - Screens                       │  │
-│  │   - Widgets                       │  │
-│  │   - State Management (Provider)   │  │
-│  └───────────────────────────────────┘  │
-│  ┌───────────────────────────────────┐  │
-│  │   Domain Layer                    │  │
-│  │   - Entities                      │  │
-│  │   - Use Cases                     │  │
-│  └───────────────────────────────────┘  │
-│  ┌───────────────────────────────────┐  │
-│  │   Data Layer                      │  │
-│  │   - Repositories                  │  │
-│  │   - API Clients (Dio)             │  │
-│  │   - Local Storage (Hive/SQLite)   │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-                    ↕ (REST API / JWT)
-┌─────────────────────────────────────────┐
-│   MOVICUOTAS Backend (Rails 8)          │
-│   - API REST                            │
-│   - Autenticación JWT                   │
-│   - Gestión de préstamos                │
-│   - MDM Integration                     │
-└─────────────────────────────────────────┘
-```
-
-### Stack Técnico (Minimalista)
-
-- **Frontend**: Flutter 3.x + Dart 3.x
-- **State Management**: Provider (simple y suficiente)
-- **Networking**: Dio (HTTP client)
-- **Cookie Management**: Cookie Jar + Dio Cookie Manager
-- **Autenticación**: Sesiones Rails (cookie-based, HTTP-only)
-
-## Modelos de Datos (Solo Lectura)
-
-La app solo **lee** estos datos, nunca los modifica:
-
-### Customer (Cliente) - Info Básica
-
-```dart
-class Customer {
-  final String id;
-  final String identityNumber;      // Número de identidad para login
-  final String customerNumber;      // Número de cliente interno
-  final String firstName;
-  final String lastName;
-  final String phone;
-
-  String get fullName => '$firstName $lastName';
-}
-```
-
-### Loan (Préstamo Activo)
-
-```dart
-class Loan {
-  final String id;
-  final String contractNumber;      // Mostrar al cliente
-  final double loanAmount;          // Monto total original
-  final double remainingBalance;    // Lo que falta pagar
-  final int termMonths;             // Plazo en meses
-  final DateTime startDate;
-  final DateTime endDate;
-
-  // Info del dispositivo (solo para mostrar)
-  final String deviceName;          // ej: "iPhone 13 Pro 128GB"
-}
-```
-
-### Installment (Cuota Actual)
-
-```dart
-class Installment {
-  final String id;
-  final int installmentNumber;      // ej: 3 (cuota #3)
-  final double amount;              // Monto de la cuota
-  final DateTime dueDate;           // Fecha de vencimiento
-  final InstallmentStatus status;   // pending, paid, overdue
-
-  bool get isOverdue => status == InstallmentStatus.overdue;
-  int get daysUntilDue => dueDate.difference(DateTime.now()).inDays;
-}
-
-enum InstallmentStatus {
-  pending,   // Pendiente
-  paid,      // Pagada
-  overdue    // Vencida
-}
-```
-
-### Payment (Historial)
-
-```dart
-class Payment {
-  final String id;
-  final double amount;
-  final DateTime paymentDate;
-  final String method;              // "Efectivo", "Transferencia", etc.
-  final String receiptNumber;       // Número de recibo
-  final int installmentNumber;      // A qué cuota corresponde
-
-  String get formattedDate => DateFormat('dd/MM/yyyy').format(paymentDate);
-  String get formattedAmount => 'L ${amount.toStringAsFixed(2)}';
-}
-```
-
-## Flujos de Trabajo (Simples)
-
-### 1. Login → Dashboard (Con Cookies Rails)
-
-```dart
-// login_screen.dart
-class LoginScreen extends StatefulWidget {
-  @override
-  _LoginScreenState createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _identityController = TextEditingController();
-  final _contractController = TextEditingController();
-  bool _isLoading = false;
-
-  Future<void> _handleLogin() async {
-    setState(() => _isLoading = true);
-
-    try {
-      // POST /login
-      // Rails automáticamente establece la cookie de sesión
-      final response = await apiClient.post('/login', {
-        'identity_number': _identityController.text,
-        'contract_number': _contractController.text,
-      });
-
-      // ¡No hay que guardar nada manualmente!
-      // CookieJar persiste la cookie automáticamente
-
-      // Navegar a dashboard
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => DashboardScreen()),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: Credenciales incorrectas')),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('MOVICUOTAS', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-            SizedBox(height: 48),
-            TextField(
-              controller: _identityController,
-              decoration: InputDecoration(labelText: 'Número de Identidad'),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 16),
-            TextField(
-              controller: _contractController,
-              decoration: InputDecoration(labelText: 'Número de Contrato'),
-              obscureText: true,
-            ),
-            SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _handleLogin,
-              child: _isLoading ? CircularProgressIndicator() : Text('Iniciar Sesión'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-```
-
-### 2. Dashboard (Pantalla Principal)
-
-```dart
-// dashboard_screen.dart
-class DashboardScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Mi Crédito')),
-      body: FutureBuilder<DashboardData>(
-        future: _loadDashboardData(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          final data = snapshot.data!;
-
-          return SingleChildScrollView(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // Info del cliente
-                Card(
-                  child: ListTile(
-                    leading: Icon(Icons.person),
-                    title: Text(data.customer.fullName),
-                    subtitle: Text('Contrato: ${data.loan.contractNumber}'),
-                  ),
-                ),
-
-                SizedBox(height: 16),
-
-                // Cuota actual
-                Card(
-                  color: Colors.blue[50],
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Text('PRÓXIMO PAGO', style: TextStyle(fontWeight: FontWeight.bold)),
-                        SizedBox(height: 8),
-                        Text('L ${data.currentInstallment.amount}',
-                             style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                        Text('Vence: ${_formatDate(data.currentInstallment.dueDate)}'),
-                        Text('Cuota #${data.currentInstallment.installmentNumber}'),
-                      ],
-                    ),
-                  ),
-                ),
-
-                SizedBox(height: 16),
-
-                // Saldo pendiente
-                Card(
-                  child: ListTile(
-                    leading: Icon(Icons.account_balance_wallet),
-                    title: Text('Saldo Pendiente'),
-                    trailing: Text('L ${data.loan.remainingBalance}',
-                                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-
-                SizedBox(height: 16),
-
-                // Botón historial
-                ElevatedButton.icon(
-                  icon: Icon(Icons.history),
-                  label: Text('Ver Historial de Pagos'),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => PaymentHistoryScreen()),
-                    );
-                  },
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Future<DashboardData> _loadDashboardData() async {
-    // Hacer 3 llamadas a la API
-    final responses = await Future.wait([
-      apiClient.get('/customers/me'),
-      apiClient.get('/loans/active'),
-      apiClient.get('/installments/current'),
-    ]);
-
-    return DashboardData(
-      customer: Customer.fromJson(responses[0]),
-      loan: Loan.fromJson(responses[1]),
-      currentInstallment: Installment.fromJson(responses[2]),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
-}
-
-class DashboardData {
-  final Customer customer;
-  final Loan loan;
-  final Installment currentInstallment;
-
-  DashboardData({
-    required this.customer,
-    required this.loan,
-    required this.currentInstallment,
-  });
-}
-```
-
-### 3. Historial de Pagos
-
-```dart
-// payment_history_screen.dart
-class PaymentHistoryScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Historial de Pagos')),
-      body: FutureBuilder<List<Payment>>(
-        future: _loadPayments(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          final payments = snapshot.data!;
-
-          if (payments.isEmpty) {
-            return Center(child: Text('No hay pagos registrados'));
-          }
-
-          return ListView.builder(
-            itemCount: payments.length,
-            itemBuilder: (context, index) {
-              final payment = payments[index];
-              return Card(
-                margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.green,
-                    child: Icon(Icons.check, color: Colors.white),
-                  ),
-                  title: Text('L ${payment.amount.toStringAsFixed(2)}'),
-                  subtitle: Text(
-                    'Cuota #${payment.installmentNumber}\n'
-                    '${payment.method}\n'
-                    'Recibo: ${payment.receiptNumber}'
-                  ),
-                  trailing: Text(payment.formattedDate),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  Future<List<Payment>> _loadPayments() async {
-    final response = await apiClient.get('/payments/history');
-    return (response['payments'] as List)
-        .map((json) => Payment.fromJson(json))
-        .toList();
-  }
-}
-```
-
-## Estructura del Proyecto (Simple)
+## Estructura
 
 ```
 lib/
-├── main.dart                 # Entry point
-├── models/
-│   ├── customer.dart        # Modelo del cliente
-│   ├── loan.dart            # Modelo del préstamo
-│   ├── installment.dart     # Modelo de cuota
-│   └── payment.dart         # Modelo de pago
-├── screens/
-│   ├── login_screen.dart    # Pantalla de login
-│   ├── dashboard_screen.dart # Pantalla principal
-│   └── payment_history_screen.dart # Historial
+├── main.dart                  # Firebase/FCM init, SplashScreen → ruta según estado
+├── models/                    # Customer, Loan, Installment, Device, Notification, Dashboard
+├── providers/                 # AuthProvider, DashboardProvider, InstallmentsProvider, NotificationsProvider
+├── screens/                   # activation, activation_success, login, dashboard,
+│                              # installments, payment, notifications, support
 ├── services/
-│   └── api_client.dart      # Cliente HTTP (Dio + CookieJar)
-└── utils/
-    ├── constants.dart        # Constantes (colores, URLs)
-    └── formatters.dart       # Helpers (formatear fechas, montos)
+│   ├── api_client.dart        # Dio + interceptor Bearer JWT; todos los endpoints
+│   ├── notification_service.dart  # Singleton FCM: permisos, token, foreground, taps
+│   └── storage_service.dart   # flutter_secure_storage
+└── utils/                     # constants.dart (ApiConfig, colores), formatters.dart
 ```
 
-**Nota**: No necesitamos carpeta de storage ni SharedPreferences porque las cookies se manejan automáticamente con CookieJar.
+Cada provider crea su **propio** `ApiClient`; por eso el JWT de la sesión vive en
+un campo `static` de `ApiClient` (ver abajo).
 
-## API Client con Cookies (Rails Way)
+## Autenticación y sesión (cómo funciona de verdad)
 
-```dart
-// services/api_client.dart
-import 'package:dio/dio.dart';
-import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'package:cookie_jar/cookie_jar.dart';
-import 'package:path_provider/path_provider.dart';
+- **JWT** HS256 emitido por el backend (`customer_id`, 30 días). Se manda como
+  `Authorization: Bearer <jwt>`; el interceptor de Dio lo toma de
+  `ApiClient._sessionToken` (memoria) o, si no hay, de secure storage.
+- **Recordar sesión** (default `true`): el JWT se persiste. Si el usuario lo
+  desmarca, `AuthProvider` borra la copia persistida **después** de registrar el
+  token FCM; la sesión sigue autenticada en memoria hasta cerrar la app, y al
+  siguiente arranque cae en el login.
+- **Arranque** (`SplashScreen._checkAuth`): JWT válido → Dashboard (y se refresca
+  el token FCM); sin JWT pero `device_activated` → Login por identidad; nada →
+  Activación.
+- **Logout** (`AuthProvider.logout`): `DELETE /device_tokens?token=…` (invalida la
+  fila en el backend), `FirebaseMessaging.deleteToken()`, limpia storage.
+  `StorageService.clearAll()` **conserva** `remember_session` y `device_activated`,
+  así que tras cerrar sesión el cliente vuelve a entrar **con su identidad**, no
+  con el código de activación.
+- Un 401 en cualquier request limpia la sesión (memoria + storage).
+- No hay endpoint de logout en el backend; el JWT sigue siendo válido hasta expirar.
 
-class ApiClient {
-  static const String baseUrl = 'https://api.movicuotas.com';
-  late final Dio _dio;
-  late final CookieJar _cookieJar;
+## Token FCM: ciclo de vida (leer antes de tocar auth)
 
-  ApiClient() {
-    _initializeCookieJar();
-  }
+Los recordatorios dependen 100% de que el cliente tenga un `DeviceToken` **activo**
+en el backend; los jobs de recordatorio **saltan** al cliente si no lo tiene, sin
+dejar rastro. Reglas:
 
-  Future<void> _initializeCookieJar() async {
-    // Guardar cookies en disco para persistencia
-    final appDocDir = await getApplicationDocumentsDirectory();
-    final appDocPath = appDocDir.path;
-    _cookieJar = PersistCookieJar(
-      storage: FileStorage(appDocPath + "/.cookies/"),
-    );
+1. `NotificationService` es singleton y se inicializa **una sola vez** en `main()`.
+   `fcmToken` (cache) queda en `null` después de `deleteToken()` y nadie lo vuelve a
+   llenar solo. Por eso **nunca** uses el cache para registrar: usa
+   `await notificationService.refreshToken()`, que pide el token actual a Firebase
+   (tras un `deleteToken()` Firebase emite uno nuevo).
+2. Puntos que registran el token con `POST /device_tokens` (upsert; reactiva filas
+   invalidadas y re-asigna el token al cliente actual):
+   - después de `login()` (antes de borrar el JWT persistido si no se recuerda sesión),
+   - al abrir la app con JWT (`_refreshDeviceToken`: `PUT /device_tokens/refresh`,
+     y si el backend responde 404, `POST`),
+   - cuando Firebase rota el token (`NotificationService.onTokenRefresh` →
+     `AuthProvider._registerDeviceToken` si hay sesión).
+   - La activación manda el token dentro de `POST /devices/activate`.
+3. Bug histórico (sep 2026): logout → login en el mismo proceso registraba nada
+   porque leía el cache nulo; el cliente dejaba de recibir recordatorios hasta un
+   arranque en frío. Además el `DELETE` no existía en el backend. Ambos corregidos;
+   la prueba manual es: entrar → cerrar sesión → volver a entrar **sin cerrar la
+   app** → en consola Rails `customer.device_tokens.active.exists?` debe ser `true`.
 
-    // Configurar Dio
-    _dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: Duration(seconds: 30),
-      receiveTimeout: Duration(seconds: 30),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-    ));
+## Endpoints usados (`api_client.dart`)
 
-    // Agregar interceptor de cookies
-    // Esto maneja automáticamente las cookies en todas las requests
-    _dio.interceptors.add(CookieManager(_cookieJar));
+| Método | Ruta | Auth | Uso |
+|---|---|---|---|
+| POST | `/devices/activate` | no | activación (Dio aparte, sin interceptor) |
+| POST | `/auth/login` | no | login por identidad |
+| GET | `/auth/forgot_contract?phone=` | no | recuperar contrato por SMS |
+| GET | `/settings` | no | config pública (Dio aparte) |
+| GET | `/dashboard` | JWT | dashboard |
+| GET | `/installments` | JWT | cuotas |
+| POST | `/payments` | JWT | reportar pago (recibo base64) |
+| GET | `/notifications`, POST `/notifications/mark_all_read` | JWT | notificaciones |
+| POST | `/device_tokens` | JWT | registrar/reactivar token FCM |
+| PUT | `/device_tokens/refresh?token=` | JWT | marcar uso |
+| DELETE | `/device_tokens?token=` | JWT | invalidar en logout |
 
-    // Logging (opcional, para desarrollo)
-    _dio.interceptors.add(LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-    ));
-  }
+Los errores del backend llegan como `{ "error": "..." }`; `ApiClient` los convierte
+en `ApiException(message, statusCode)`.
 
-  // Login - Rails establece la cookie automáticamente
-  Future<Map<String, dynamic>> login(String identity, String contract) async {
-    final response = await _dio.post('/login', data: {
-      'identity_number': identity,
-      'contract_number': contract,
-    });
-    // La cookie de sesión se guarda automáticamente por CookieManager
-    return response.data;
-  }
-
-  // Logout - Rails destruye la cookie
-  Future<void> logout() async {
-    await _dio.post('/logout');
-    // Limpiar cookies localmente también
-    await _cookieJar.deleteAll();
-  }
-
-  // Get customer info - La cookie se envía automáticamente
-  Future<Map<String, dynamic>> getCustomer() async {
-    final response = await _dio.get('/customers/me');
-    return response.data;
-  }
-
-  // Get active loan
-  Future<Map<String, dynamic>> getActiveLoan() async {
-    final response = await _dio.get('/loans/active');
-    return response.data;
-  }
-
-  // Get current installment
-  Future<Map<String, dynamic>> getCurrentInstallment() async {
-    final response = await _dio.get('/installments/current');
-    return response.data;
-  }
-
-  // Get payment history
-  Future<List<dynamic>> getPaymentHistory() async {
-    final response = await _dio.get('/payments/history');
-    return response.data['payments'];
-  }
-}
-
-// Singleton para reutilizar en toda la app
-final apiClient = ApiClient();
-```
-
-### Ventajas de Usar Cookies vs JWT
-
-1. **Más Simple**: No hay que manejar tokens manualmente
-2. **Rails Way**: Usa el sistema nativo de sesiones de Rails 8
-3. **Automático**: CookieJar maneja todo (guardar, enviar, actualizar)
-4. **Seguro**: Cookies HTTP-only (no accesibles desde JavaScript)
-5. **Persistente**: PersistCookieJar guarda en disco automáticamente
-
-## Decisiones de Diseño
-
-### 1. App Simple de Solo Consulta
-
-**Decisión**: Crear una app minimalista de solo lectura, sin funcionalidades complejas.
-
-**Razones**:
-- El cliente necesita algo funcional y rápido
-- Los pagos se hacen en persona, no en línea
-- Reduce tiempo de desarrollo y mantenimiento
-- Más fácil de probar y debuggear
-
-### 2. Sesiones Rails con Cookies vs JWT
-
-**Decisión**: Usar el sistema de autenticación nativo de Rails 8 con sesiones basadas en cookies HTTP-only en lugar de JWT.
-
-**Razones**:
-- **Rails Way**: Usa el sistema estándar de Rails 8
-- **Más Simple**: No hay que manejar tokens manualmente en Flutter
-- **Automático**: CookieJar + Dio manejan todo sin código adicional
-- **Seguro**: Cookies HTTP-only no son accesibles desde código
-- **Persistente**: PersistCookieJar guarda cookies automáticamente en disco
-
-**Comparación**:
-```dart
-// Con JWT (más complejo)
-await prefs.setString('token', response['token']);
-options.headers['Authorization'] = 'Bearer $token';
-
-// Con Cookies (automático)
-// ¡No hay código! CookieManager lo hace todo
-```
-
-### 3. Autenticación con Identidad + Contrato
-
-**Decisión**: Usar número de identidad + número de contrato en lugar de email/password.
-
-**Razones**:
-- Inspirado en sistemas de crédito conocidos como KrediYa (Honduras)
-- Más intuitivo para clientes sin experiencia técnica
-- El contrato es único y ya está en poder del cliente
-- No requiere memorizar passwords complicados
-
-### 4. Sin Arquitectura Compleja
-
-**Decisión**: No usar Clean Architecture, Repository Pattern, ni Use Cases.
-
-**Razones**:
-- La app es demasiado simple para justificar la complejidad
-- 3 pantallas no requieren abstracción avanzada
-- Más fácil de mantener con código directo
-- Tiempo de desarrollo se reduce significativamente
-
-### 5. Color #125282 como Color Primario
-
-**Decisión**: Usar azul oscuro #125282 como color principal de la marca.
-
-**Razones**:
-- Psicología del color: confianza, profesionalismo, estabilidad
-- Apropiado para aplicaciones financieras
-- Buen contraste con texto blanco (accesibilidad)
-
-## Testing (Básico pero Suficiente)
-
-Para una app simple de consulta, nos enfocamos en tests básicos:
-
-### Widget Tests (Lo Esencial)
-
-```dart
-// test/widgets/dashboard_test.dart
-void main() {
-  testWidgets('Dashboard muestra cuota actual', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      MaterialApp(home: DashboardScreen()),
-    );
-
-    // Verificar que se muestra la cuota
-    expect(find.text('PRÓXIMO PAGO'), findsOneWidget);
-    expect(find.text('L '), findsWidgets); // Debería haber varios montos
-  });
-}
-```
-
-### Integration Test (Login → Dashboard)
-
-```dart
-// integration_test/app_test.dart
-void main() {
-  testWidgets('Flujo completo login a dashboard', (tester) async {
-    app.main();
-    await tester.pumpAndSettle();
-
-    // Login
-    await tester.enterText(find.byType(TextField).first, '0801199012345');
-    await tester.enterText(find.byType(TextField).last, 'S01-2025-12-04-000001');
-    await tester.tap(find.text('Iniciar Sesión'));
-    await tester.pumpAndSettle();
-
-    // Verificar que llegó al dashboard
-    expect(find.text('Mi Crédito'), findsOneWidget);
-  });
-}
-```
-
-## Deployment (Android APK)
+## Desarrollo y build
 
 ```bash
-# Build APK para testing
-flutter build apk --debug
-
-# Build APK para producción
-flutter build apk --release
-
-# El APK estará en:
-# build/app/outputs/flutter-apk/app-release.apk
+flutter pub get
+flutter analyze
+flutter test                      # solo test/widget_test.dart por ahora
+flutter build apk --release       # build/app/outputs/flutter-apk/app-release.apk
 ```
 
-## Próximos Pasos (Ruta Rápida)
+- Toolchain que exige Flutter 3.47: Gradle 8.14.3 (`android/gradle/wrapper`),
+  AGP 8.11.1 y Kotlin 2.2.20 (`android/settings.gradle.kts`), JDK 17. El APK
+  release se firma con las llaves de **debug** (`build.gradle.kts` tiene el TODO).
+- Distribución: APK directo a los clientes (no Play Store). Sube `version:` en
+  `pubspec.yaml` en cada entrega.
+- `NotificationService` no es inyectable (constructor privado, `late final
+  FirebaseMessaging`), así que la lógica de tokens se verifica en dispositivo real
+  con los `debugPrint` de `AuthProvider`/`ApiClient`, no con tests unitarios.
+- `main.dart` imprime el token FCM y lo guarda en `fcm_token.txt` (documentos de la
+  app) para pruebas; es solo de diagnóstico.
 
-### Semana 1: Setup y Login
-- [x] Crear proyecto Flutter
-- [ ] Implementar LoginScreen
-- [ ] Integrar con API /auth/login
-- [ ] Guardar token en SharedPreferences
+### Prueba de punta a punta contra el backend local (emulador)
 
-### Semana 2: Dashboard
-- [ ] Crear DashboardScreen
-- [ ] Mostrar info del cliente
-- [ ] Mostrar cuota actual (card destacado)
-- [ ] Mostrar saldo pendiente
-- [ ] Agregar botón "Ver Historial"
-
-### Semana 3: Historial
-- [ ] Crear PaymentHistoryScreen
-- [ ] Listar todos los pagos
-- [ ] Formatear montos y fechas
-- [ ] Scroll infinito (si hay muchos pagos)
-
-### Semana 4: Polish y Testing
-- [ ] Agregar loading indicators
-- [ ] Manejo de errores (sin conexión, etc)
-- [ ] Tests básicos
-- [ ] Build APK para testing con cliente
-
-## Dependencias Necesarias (pubspec.yaml)
-
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-
-  # HTTP Client
-  dio: ^5.4.0
-
-  # Cookie Management (para sesiones Rails)
-  dio_cookie_manager: ^3.1.0
-  cookie_jar: ^4.0.8
-
-  # Storage para cookies persistentes
-  path_provider: ^2.1.0
-
-  # Utilidades
-  intl: ^0.19.0  # Para formatear fechas y montos
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  integration_test:
-    sdk: flutter
+```bash
+# backend (puerto 3001 porque 3000 suele estar ocupado por otro dev server)
+cd ../movicuotas-backend && bin/rails server -b 0.0.0.0 -p 3001 -d
+# app: 10.0.2.2 es el host visto desde el emulador Android
+flutter emulators --launch pixel_api34      # Pixel 6 / Android 14 / Google APIs
+flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+adb logcat -s flutter:I                     # debugPrint de AuthProvider/ApiClient
 ```
+En la BD de desarrollo hay dispositivos con código de activación
+(`Device.where.not(activation_code: nil)`); el flujo verificado el 2026-09-14 fue
+activar → cerrar sesión → login por identidad, comprobando en Rails que
+`customer.device_tokens.active.exists?` vuelve a ser `true`.
 
-## Colores y Tema (utils/constants.dart)
+## Diseño
 
-```dart
-import 'package:flutter/material.dart';
-
-class AppColors {
-  static const primary = Color(0xFF125282);
-  static const success = Color(0xFF10b981);
-  static const warning = Color(0xFFf59e0b);
-  static const error = Color(0xFFef4444);
-}
-
-class AppTheme {
-  static ThemeData get theme => ThemeData(
-    primaryColor: AppColors.primary,
-    colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary),
-    appBarTheme: AppBarTheme(
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-    ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-      ),
-    ),
-  );
-}
-```
-
-## Recursos
-
-- **Backend Repo**: `movicuotas-backend` (Rails 8)
-- **Design System**: Ver documento de colores y branding
-- **Flutter Docs**: https://flutter.dev/docs
-- **Dio Package**: https://pub.dev/packages/dio
-
-## Notas Importantes
-
-**Esta es una app SIMPLE:**
-- Solo 3 pantallas (Login, Dashboard, Historial)
-- Solo lectura (no se crean ni modifican datos)
-- No requiere arquitectura compleja
-- Enfoque en simplicidad y rapidez de desarrollo
-- Los pagos se hacen en persona, no en la app
-
-**Prioridades:**
-1. Que funcione bien
-2. Que sea rápida
-3. Que sea fácil de usar
-4. Que sea fácil de mantener
+- Color primario `#125282`; success `#10b981`, warning `#f59e0b`, error `#ef4444`
+  (`utils/constants.dart`).
+- Moneda: Lempiras, formato `L 1,234.56` (`utils/formatters.dart`); fechas en `es`.
 
 ---
 
-**Última actualización**: Diciembre 2024
-**Proyecto**: MOVICUOTAS - Sistema de Gestión de Créditos
+**Última actualización**: 2026-09-14

@@ -25,9 +25,17 @@ class NotificationService {
 
   String? _fcmToken;
   Function(String)? _onNotificationTap;
+  Function(String)? _onTokenRefresh;
   bool _initialized = false;
 
+  /// Last token obtained from Firebase. May be null after [deleteToken] (logout);
+  /// callers that need a token to register with the backend must use
+  /// [refreshToken], which always asks Firebase for the current one.
   String? get fcmToken => _fcmToken;
+
+  /// Called whenever Firebase rotates the FCM token. The backend must be told
+  /// about the new token or push notifications silently stop arriving.
+  set onTokenRefresh(Function(String)? callback) => _onTokenRefresh = callback;
 
   /// Initialize Firebase and notification services
   Future<void> initialize({Function(String)? onNotificationTap}) async {
@@ -57,6 +65,7 @@ class NotificationService {
     _messaging.onTokenRefresh.listen((newToken) {
       debugPrint('FCM: Token refreshed');
       _fcmToken = newToken;
+      _onTokenRefresh?.call(newToken);
     });
 
     // Handle foreground messages
@@ -209,7 +218,9 @@ class NotificationService {
     };
   }
 
-  /// Refresh token with backend (call on app open)
+  /// Ask Firebase for the current FCM token and cache it.
+  /// After [deleteToken] Firebase mints a brand-new token here, so this is the
+  /// method to use before registering with the backend (login, activation).
   Future<String?> refreshToken() async {
     if (!_initialized) return null;
     _fcmToken = await _messaging.getToken();

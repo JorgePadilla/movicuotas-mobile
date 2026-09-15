@@ -29,6 +29,7 @@ class AuthProvider extends ChangeNotifier {
   Loan? _loan;
   String? _error;
   bool _isDeviceActivated = false;
+  String? _lastRegisteredToken;
 
   AuthProvider({
     ApiClient? apiClient,
@@ -36,7 +37,13 @@ class AuthProvider extends ChangeNotifier {
     NotificationService? notificationService,
   })  : _apiClient = apiClient ?? ApiClient(),
         _storageService = storageService ?? StorageService(),
-        _notificationService = notificationService ?? NotificationService();
+        _notificationService = notificationService ?? NotificationService() {
+    // Keep the backend in sync when Firebase rotates the token; otherwise the
+    // stored token goes stale and reminders stop arriving without any logout.
+    _notificationService.onTokenRefresh = (_) {
+      if (isAuthenticated) _registerDeviceToken();
+    };
+  }
 
   AuthStatus get status => _status;
   Customer? get customer => _customer;
@@ -82,8 +89,8 @@ class AuthProvider extends ChangeNotifier {
     try {
       debugPrint('AuthProvider: Starting device activation...');
 
-      // Get FCM token
-      final fcmToken = _notificationService.fcmToken;
+      // Get a fresh FCM token from Firebase (the cached one is null after a logout)
+      final fcmToken = await _notificationService.refreshToken();
       if (fcmToken == null) {
         debugPrint('AuthProvider: No FCM token available');
         return ActivationResult(
@@ -180,18 +187,21 @@ class AuthProvider extends ChangeNotifier {
       _loan = Loan.fromJson(data['loan'] as Map<String, dynamic>);
       debugPrint('AuthProvider: Login successful!');
       _status = AuthStatus.authenticated;
-
-      // Handle remember session preference
       await _storageService.saveRememberSession(rememberSession);
+
+      notifyListeners();
+
+      // Register FCM device token after successful login, and BEFORE dropping the
+      // persisted JWT for "no recordar sesión": an unauthenticated POST gets a 401
+      // that wipes local storage. (ApiClient also keeps the JWT in memory for the
+      // rest of the process, so the session itself stays authenticated either way.)
+      await _registerDeviceToken();
+
+      // Handle remember session preference (after registration, see above)
       if (!rememberSession) {
         debugPrint('AuthProvider: User chose not to remember session, clearing token');
         await _storageService.clearToken();
       }
-
-      notifyListeners();
-
-      // Register FCM device token after successful login
-      await _registerDeviceToken();
 
       return true;
     } on ApiException catch (e) {
@@ -224,6 +234,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     // Unregister FCM device token before logout
     await _unregisterDeviceToken();
+    _lastRegisteredToken = null;
 
     await _apiClient.logout();
     _customer = null;
@@ -233,14 +244,23 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Register FCM device token with backend
+  /// Register FCM device token with backend.
+  ///
+  /// Always asks Firebase for the current token instead of reading the cached
+  /// value: after logout() -> deleteToken() the cache is null for the rest of the
+  /// process, and a login in the same session used to silently register nothing,
+  /// leaving the customer with no active device token (no reminders).
   Future<void> _registerDeviceToken() async {
     try {
-      final token = _notificationService.fcmToken;
+      final token = await _notificationService.refreshToken();
       if (token == null) {
         debugPrint('AuthProvider: No FCM token available');
         return;
       }
+      // Login and Firebase's onTokenRefresh can both fire for the same new token
+      // within milliseconds; one POST per token is enough (the backend upserts).
+      if (token == _lastRegisteredToken) return;
+      _lastRegisteredToken = token;
 
       final deviceInfo = await _notificationService.getDeviceInfo();
       await _apiClient.registerDeviceToken(

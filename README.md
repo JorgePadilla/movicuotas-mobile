@@ -28,19 +28,20 @@ MOVICUOTAS Mobile es una aplicación Flutter simple y enfocada que permite a los
 
 ### ¿Qué NO hace la app?
 
-Esta es una aplicación de **solo consulta**. No incluye:
-- Pagos en línea
-- Modificación de datos
-- Notificaciones push complejas
+No incluye:
+- Pagos en línea (el cliente **reporta** un pago con foto del recibo; se valida en tienda)
 - Gestión de préstamos
 - MDM o funcionalidad offline avanzada
+
+Sí incluye **notificaciones push (FCM)**: recordatorios de pago y avisos de mora
+enviados por el backend.
 
 ## Características
 
 ### Autenticación Simple
-- Login con número de identidad + número de contrato
-- Sesiones seguras basadas en cookies HTTP-only
-- Sin necesidad de recordar contraseñas complejas
+- Activación del teléfono con el código de 6 caracteres del contrato
+- Login solo con el número de identidad (sin contraseña ni contrato)
+- JWT de 30 días guardado en almacenamiento seguro; opción "recordar sesión"
 
 ### Dashboard Intuitivo
 - Vista clara de la información del cliente
@@ -111,10 +112,10 @@ lib/
 
 ### Dependencias Principales
 
-- **dio**: Cliente HTTP para consumir la API REST
-- **dio_cookie_manager**: Manejo automático de cookies de sesión
-- **cookie_jar**: Persistencia de cookies en disco
-- **path_provider**: Acceso a directorios del sistema
+- **dio**: Cliente HTTP para consumir la API REST (JWT en header `Authorization`)
+- **provider**: Estado (AuthProvider, DashboardProvider, ...)
+- **flutter_secure_storage**: JWT, id de cliente y banderas de sesión
+- **firebase_messaging** + **flutter_local_notifications**: push FCM
 - **intl**: Formateo de fechas y montos
 
 ### Ejecutar Tests
@@ -144,24 +145,26 @@ flutter build apk --release
 
 La aplicación consume una API REST construida con Rails 8. Endpoints principales:
 
-- `POST /login` - Autenticación
-- `GET /customers/me` - Información del cliente
-- `GET /loans/active` - Préstamo activo
-- `GET /installments/current` - Cuota actual
-- `GET /payments/history` - Historial de pagos
-- `POST /logout` - Cerrar sesión
+- `POST /api/v1/devices/activate` - Activación del teléfono (devuelve JWT)
+- `POST /api/v1/auth/login` - Login por número de identidad (devuelve JWT)
+- `GET /api/v1/dashboard` - Cliente, préstamo, próxima cuota
+- `GET /api/v1/installments` - Cuotas
+- `POST /api/v1/payments` - Reportar un pago
+- `GET /api/v1/notifications` - Notificaciones
+- `POST/PUT/DELETE /api/v1/device_tokens` - Registro del token FCM (login / apertura / logout)
+
+No hay endpoint de logout: cerrar sesión es local (más la invalidación del token FCM).
 
 Ver [CLAUDE.md](./CLAUDE.md) para detalles completos de la integración.
 
 ## Autenticación
 
-La app usa sesiones Rails basadas en cookies HTTP-only en lugar de JWT:
+La app usa JWT (HS256, 30 días) emitido por el backend en la activación o el login:
 
-**Ventajas:**
-- Más simple (no hay que manejar tokens manualmente)
-- Automático (CookieJar se encarga de todo)
-- Seguro (cookies HTTP-only)
-- Persistente (se guarda en disco automáticamente)
+- Se envía como `Authorization: Bearer <jwt>` en cada request
+- Se guarda en `flutter_secure_storage` si "recordar sesión" está activo
+- Al cerrar sesión se invalida el token FCM en el backend y se limpia el storage,
+  conservando la activación del teléfono para volver a entrar con la identidad
 
 ## Diseño y Estilo
 
@@ -188,9 +191,9 @@ La app usa sesiones Rails basadas en cookies HTTP-only en lugar de JWT:
 
 ## Seguridad
 
-- Autenticación con sesiones Rails HTTP-only
-- Cookies encriptadas y firmadas
-- No se almacenan credenciales en el dispositivo
+- Autenticación con JWT firmado por el backend
+- Token guardado en almacenamiento seguro del sistema (Keychain / EncryptedSharedPreferences)
+- No se almacenan contraseñas en el dispositivo
 - Comunicación HTTPS obligatoria
 - Timeout automático de sesión
 
