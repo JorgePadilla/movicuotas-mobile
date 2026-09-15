@@ -80,7 +80,13 @@ class AppTheme {
 }
 
 class ApiConfig {
-  static const String baseUrl = 'https://movicuotas.com/api/v1';
+  /// Backend base URL. Production by default; override at build/run time for
+  /// local testing, e.g. against a Rails dev server from the Android emulator:
+  ///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://movicuotas.com/api/v1',
+  );
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
 }
